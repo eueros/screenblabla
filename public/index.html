@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScreenShare</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Figtree:wght@400;600&display=swap">
+<style>
+:root{--bg:#eef1f4;--ink:#14202b;--mute:#5b6b7a;--line:#d5dce3;--acc:#2457f5;--acc-ink:#fff;--stage:#0e141b;--card:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#10161d;--ink:#e8edf2;--mute:#8fa0b0;--line:#26323e;--card:#17202a;--stage:#070b10}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 Figtree,system-ui,sans-serif}
+h1,h2{font-family:'Bricolage Grotesque',system-ui,sans-serif;margin:0}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:.6rem 1rem}
+button.primary{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600}
+button.sel{border-color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc);font-weight:600}
+button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.hidden{display:none!important}
+.center{min-height:100%;display:grid;place-content:center;gap:1.25rem;padding:2rem;text-align:center;justify-items:center}
+.center h1{font-size:clamp(2.4rem,8vw,4.5rem);letter-spacing:-.03em;line-height:1}
+.center p{margin:0;color:var(--mute);max-width:34ch}
+.err{color:#c0392b}
+#room{height:100%;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h2{font-size:1.25rem;margin-right:auto}
+#count{font-weight:600}
+main{flex:1;min-height:0;padding:1rem;overflow:auto}
+#grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))}
+.tile{background:var(--stage);border-radius:10px;overflow:hidden;position:relative;aspect-ratio:16/9}
+.tile video{width:100%;height:100%;object-fit:contain;display:block}
+.tile .snd{position:absolute;top:.5rem;right:.5rem;padding:.3rem .6rem;font-size:.85rem;background:rgba(0,0,0,.6);color:#fff;border-color:rgba(255,255,255,.25)}
+.tile .who{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;padding:.5rem .75rem;color:#fff;font-size:.9rem;background:linear-gradient(transparent,rgba(0,0,0,.7))}
+#empty{height:100%;display:grid;place-content:center;gap:1rem;text-align:center;justify-items:center;color:var(--mute)}
+footer{padding:.75rem 1rem;border-top:1px solid var(--line);display:flex;gap:.75rem;justify-content:center}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:1.5rem;width:min(92vw,440px)}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+dialog h2{font-size:1.4rem;margin-bottom:1rem}
+dialog h3{font-size:.95rem;margin:1.1rem 0 .5rem;color:var(--mute);font-weight:600}
+.row{display:flex;gap:.5rem;flex-wrap:wrap}
+.row button{flex:1}
+.summary{text-align:center;font:700 1.5rem 'Bricolage Grotesque',system-ui,sans-serif;margin:1.25rem 0 .25rem}
+.note{font-size:.85rem;color:var(--mute);margin:0 0 1rem;text-align:center}
+.actions{display:flex;gap:.5rem}.actions button{flex:1}
+</style>
+</head>
+<body>
+
+<section id="home" class="center hidden">
+  <h1>ScreenShare</h1>
+  <p>Crie uma sala, envie o link e compartilhem as telas. Sem conta, sem limite de tempo.</p>
+  <button id="create" class="primary">Criar sala</button>
+  <p id="homeMsg" class="err"></p>
+</section>
+
+<section id="blocked" class="center hidden">
+  <h1>Ops</h1>
+  <p id="blockedMsg"></p>
+  <button onclick="location.href='/'">Voltar ao início</button>
+</section>
+
+<section id="room" class="hidden">
+  <header>
+    <h2>ScreenShare</h2>
+    <span id="count">👥 1/15 pessoas</span>
+    <button id="copy">Copiar link</button>
+    <button id="leave">Sair da sala</button>
+  </header>
+  <main>
+    <div id="empty">
+      <p>Ninguém está compartilhando a tela.</p>
+      <button class="primary" data-share>Compartilhar minha tela</button>
+    </div>
+    <div id="grid" class="hidden"></div>
+  </main>
+  <footer>
+    <button id="shareBtn" class="primary" data-share>Compartilhar minha tela</button>
+    <button id="stopBtn" class="hidden">Parar meu compartilhamento</button>
+  </footer>
+</section>
+
+<dialog id="dlg">
+  <h2>Qualidade da transmissão</h2>
+  <h3>Presets</h3>
+  <div class="row" id="presets">
+    <button data-p="720,30">Econômica</button>
+    <button data-p="1080,60">Alta</button>
+    <button data-p="1440,60">Máxima</button>
+  </div>
+  <h3>Resolução</h3>
+  <div class="row" id="resBtns">
+    <button data-res="720">720p</button><button data-res="1080">1080p</button><button data-res="1440">1440p</button>
+  </div>
+  <h3>Taxa de quadros</h3>
+  <div class="row" id="fpsBtns">
+    <button data-fps="30">30 FPS</button><button data-fps="60">60 FPS</button>
+  </div>
+  <div class="summary" id="summary"></div>
+  <p class="note">Ao escolher a tela, janela ou aba, o navegador pergunta se você quer incluir o áudio. Só o áudio do que você compartilha é enviado; nada de microfone.</p>
+  <p class="note">Até 1440p / 60 FPS. A qualidade real depende do seu computador, navegador, tela compartilhada, upload e da conexão de quem assiste.</p>
+  <div class="actions">
+    <button id="cancel">Cancelar</button>
+    <button id="start" class="primary">Começar transmissão</button>
+  </div>
+</dialog>
+
+<script>
+const MAX = 15;
+const $ = s => document.querySelector(s);
+const show = id => { for (const s of ['home','blocked','room']) $('#'+s).classList.toggle('hidden', s !== id); };
+const match = location.pathname.match(/^\/r\/([a-z0-9]+)$/);
+
+if (!match) {
+  show('home');
+  $('#create').onclick = async () => {
+    try {
+      const r = await fetch('/api/rooms', { method: 'POST' });
+      const { code } = await r.json();
+      location.href = '/r/' + code;
+    } catch { $('#homeMsg').textContent = 'Não foi possível criar a sala. Tente de novo.'; }
+  };
+} else {
+  joinRoom(match[1]);
+}
+
+function joinRoom(code) {
+  const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+  const peers = new Map();   // id -> { name, share, pc, stream, polite, making, ignore, senders }
+  let myId, myName, ws, localStream = null, myShare = null, left = false;
+  let quality = { res: 1080, fps: 60 };
+
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws?room=' + code);
+  const wsSend = o => ws.readyState === 1 && ws.send(JSON.stringify(o));
+
+  ws.onmessage = async ev => {
+    const m = JSON.parse(ev.data);
+    if (m.type === 'error') {
+      show('blocked');
+      $('#blockedMsg').textContent = m.reason === 'full' ? 'Esta sala está cheia. O limite é de 15 pessoas.' : 'Sala não encontrada. Peça um novo link.';
+      left = true;
+    } else if (m.type === 'welcome') {
+      myId = m.id; myName = m.name;
+      m.peers.forEach(p => peers.set(p.id, { name: p.name, share: p.share, senders: [] }));
+      show('room'); render();
+    } else if (m.type === 'count') setCount(m.count);
+    else if (m.type === 'peer-joined') {
+      peers.set(m.peer.id, { name: m.peer.name, share: null, senders: [] });
+      setCount(m.count);
+      if (localStream) attachTracks(m.peer.id); // quem já transmite envia para o novo participante
+      render();
+    } else if (m.type === 'peer-left') {
+      closePeer(m.id); peers.delete(m.id); setCount(m.count); render();
+    } else if (m.type === 'share') {
+      const p = peers.get(m.id); if (p) { p.share = m.share; if (!m.share) p.stream = null; render(); }
+    } else if (m.type === 'signal') onSignal(m.from, m.data);
+  };
+  ws.onclose = () => { if (!left) { show('blocked'); $('#blockedMsg').textContent = 'Conexão perdida com a sala.'; } };
+
+  function setCount(n) { $('#count').textContent = '👥 ' + n + '/' + MAX + ' pessoas'; }
+
+  // ---------- WebRTC (negociação perfeita) ----------
+  function getPeer(id) {
+    const p = peers.get(id); if (!p) return null;
+    if (p.pc) return p;
+    p.polite = myId > id; p.making = false; p.ignore = false;
+    const pc = p.pc = new RTCPeerConnection(ICE);
+    pc.onicecandidate = e => e.candidate && wsSend({ type: 'signal', to: id, data: { candidate: e.candidate } });
+    pc.onnegotiationneeded = async () => {
+      try { p.making = true; await pc.setLocalDescription(); wsSend({ type: 'signal', to: id, data: { description: pc.localDescription } }); }
+      catch (e) { console.error(e); } finally { p.making = false; }
+    };
+    pc.ontrack = e => { p.stream = e.streams[0]; render(); };
+    return p;
+  }
+  async function onSignal(id, data) {
+    const p = getPeer(id); if (!p) return;
+    const pc = p.pc;
+    try {
+      if (data.description) {
+        const collision = data.description.type === 'offer' && (p.making || pc.signalingState !== 'stable');
+        p.ignore = !p.polite && collision;
+        if (p.ignore) return;
+        await pc.setRemoteDescription(data.description);
+        if (data.description.type === 'offer') {
+          await pc.setLocalDescription();
+          wsSend({ type: 'signal', to: id, data: { description: pc.localDescription } });
+        }
+      } else if (data.candidate) {
+        try { await pc.addIceCandidate(data.candidate); } catch (e) { if (!p.ignore) throw e; }
+      }
+    } catch (e) { console.error(e); }
+  }
+  function closePeer(id) { const p = peers.get(id); if (p && p.pc) { p.pc.close(); p.pc = null; } }
+
+  function bitrate() {
+    const base = { 720: 2.5e6, 1080: 5e6, 1440: 9e6 }[quality.res];
+    return quality.fps === 60 ? base * 1.5 : base;
+  }
+  function attachTracks(id) {
+    const p = getPeer(id); if (!p || !localStream) return;
+    for (const track of localStream.getTracks()) { // vídeo + áudio da tela, no mesmo stream
+      const sender = p.pc.addTrack(track, localStream);
+      p.senders.push(sender);
+      try {
+        const params = sender.getParameters();
+        if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+        if (track.kind === 'video') {
+          params.encodings[0].maxBitrate = bitrate();
+          params.encodings[0].maxFramerate = quality.fps;
+        } else params.encodings[0].maxBitrate = 192000;
+        sender.setParameters(params).catch(() => {});
+      } catch {}
+    }
+  }
+
+  // ---------- compartilhamento ----------
+  document.querySelectorAll('[data-share]').forEach(b => b.onclick = openDialog);
+  const dlg = $('#dlg');
+  function paintDialog() {
+    document.querySelectorAll('[data-res]').forEach(b => b.classList.toggle('sel', +b.dataset.res === quality.res));
+    document.querySelectorAll('[data-fps]').forEach(b => b.classList.toggle('sel', +b.dataset.fps === quality.fps));
+    document.querySelectorAll('[data-p]').forEach(b => b.classList.toggle('sel', b.dataset.p === quality.res + ',' + quality.fps));
+    $('#summary').textContent = quality.res + 'p • ' + quality.fps + ' FPS';
+  }
+  function openDialog() { paintDialog(); dlg.showModal(); }
+  document.querySelectorAll('[data-res]').forEach(b => b.onclick = () => { quality.res = +b.dataset.res; paintDialog(); });
+  document.querySelectorAll('[data-fps]').forEach(b => b.onclick = () => { quality.fps = +b.dataset.fps; paintDialog(); });
+  document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { const [r, f] = b.dataset.p.split(','); quality = { res: +r, fps: +f }; paintDialog(); });
+  $('#cancel').onclick = () => dlg.close();
+  $('#start').onclick = async () => {
+    dlg.close();
+    const w = Math.round(quality.res * 16 / 9);
+    try {
+      localStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { width: { ideal: w }, height: { ideal: quality.res }, frameRate: { ideal: quality.fps } }, audio: true });
+    } catch { return; } // pessoa cancelou o seletor
+    const track = localStream.getVideoTracks()[0];
+    track.contentHint = 'detail';
+    track.onended = stopShare;
+    const s = track.getSettings();
+    const hasAudio = localStream.getAudioTracks().length > 0; // pode ser 0: o vídeo segue normalmente
+    myShare = (s.height || quality.res) + 'p • ' + Math.round(s.frameRate || quality.fps) + ' FPS' + (hasAudio ? ' • com áudio' : ' • sem áudio');
+    for (const id of peers.keys()) attachTracks(id);
+    wsSend({ type: 'share', on: true, label: myShare });
+    render();
+  };
+  $('#stopBtn').onclick = stopShare;
+  function stopShare() {
+    if (!localStream) return;
+    localStream.getTracks().forEach(t => t.stop());
+    localStream = null; myShare = null;
+    for (const p of peers.values()) {
+      if (p.pc) p.senders.forEach(s => { try { p.pc.removeTrack(s); } catch {} });
+      p.senders = [];
+    }
+    wsSend({ type: 'share', on: false });
+    render();
+  }
+
+  // ---------- interface ----------
+  function render() {
+    const grid = $('#grid');
+    const tiles = [];
+    if (localStream) tiles.push({ key: 'me', name: 'Você (' + myName + ')', label: myShare, stream: localStream, muted: true });
+    for (const [id, p] of peers) if (p.share && p.stream) tiles.push({ key: id, name: p.name, label: p.share, stream: p.stream });
+    const keys = new Set(tiles.map(t => t.key));
+    [...grid.children].forEach(el => { if (!keys.has(el.dataset.key)) el.remove(); });
+    for (const t of tiles) {
+      let el = grid.querySelector('[data-key="' + t.key + '"]');
+      if (!el) {
+        el = document.createElement('div'); el.className = 'tile'; el.dataset.key = t.key;
+        el.innerHTML = '<video autoplay playsinline></video><button type="button" class="snd"></button><div class="who"><span></span><span></span></div>';
+        grid.appendChild(el);
+        const v0 = el.querySelector('video'), btn = el.querySelector('.snd');
+        v0.muted = !!t.muted; // a própria prévia fica muda para não gerar eco
+        el._paint = () => { btn.textContent = v0.muted ? '🔇 Ativar som' : '🔊'; };
+        if (t.muted) btn.classList.add('hidden');
+        else btn.onclick = () => { v0.muted = !v0.muted; el._paint(); v0.play().catch(() => {}); };
+        el._paint();
+      }
+      const v = el.querySelector('video');
+      if (v.srcObject !== t.stream) {
+        v.srcObject = t.stream;
+        // se o navegador bloquear o som automático, toca mudo e mostra "Ativar som"
+        v.play().catch(err => {
+          if (err && err.name === 'NotAllowedError') { v.muted = true; el._paint(); v.play().catch(() => {}); }
+        });
+      }
+      const [a, b] = el.querySelectorAll('.who span');
+      a.textContent = t.name; b.textContent = t.label;
+    }
+    grid.classList.toggle('hidden', !tiles.length);
+    $('#empty').classList.toggle('hidden', !!tiles.length);
+    $('#shareBtn').classList.toggle('hidden', !!localStream);
+    $('#stopBtn').classList.toggle('hidden', !localStream);
+  }
+
+  $('#copy').onclick = async e => {
+    try { await navigator.clipboard.writeText(location.href); e.target.textContent = 'Link copiado'; }
+    catch { prompt('Copie o link:', location.href); }
+    setTimeout(() => e.target.textContent = 'Copiar link', 1800);
+  };
+  $('#leave').onclick = () => { left = true; stopShare(); ws.close(); peers.forEach((_, id) => closePeer(id)); location.href = '/'; };
+}
+</script>
+</body>
+</html>
